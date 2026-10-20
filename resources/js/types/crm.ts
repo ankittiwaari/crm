@@ -74,6 +74,7 @@ export type Client = {
     pincode: string | null;
     gstin: string | null;
     notes: string | null;
+    whatsapp_automation: boolean;
     last_activity_at: string | null;
     created_at: string | null;
     primary_contact?: Contact | null;
@@ -161,6 +162,10 @@ export type Subscription = {
     current_period_start: string | null;
     current_period_end: string | null;
     days_until_renewal: number | null;
+    renewal_state: 'current' | 'in_grace' | 'lapsed' | null;
+    grace_ends_on: string | null;
+    next_period: { start: string; end: string } | null;
+    periods?: SubscriptionPeriodRow[];
     auto_renew: boolean;
     renewal_notice_days: number;
     grace_days: number;
@@ -240,8 +245,18 @@ export type Payment = {
 
 export type InvoiceMessage = {
     id: number;
-    channel: 'whatsapp_link' | 'email';
+    channel: 'whatsapp_link' | 'whatsapp_api' | 'email';
     channel_label: string;
+    direction: 'outbound' | 'inbound';
+    status:
+        | 'queued'
+        | 'sent'
+        | 'delivered'
+        | 'read'
+        | 'failed'
+        | 'received'
+        | null;
+    error: string | null;
     recipient: string;
     sent_at: string;
 };
@@ -279,4 +294,55 @@ export type Invoice = {
     items?: InvoiceItem[];
     payments?: Payment[];
     messages?: InvoiceMessage[];
+};
+
+export type ReminderTypeValue =
+    | 'renewal'
+    | 'promo_review'
+    | 'payment_follow_up'
+    | 'follow_up'
+    | 'general';
+
+export type Reminder = {
+    id: number;
+    type: ReminderTypeValue;
+    type_label: string;
+    title: string;
+    notes: string | null;
+    due_on: string;
+    is_overdue: boolean;
+    completed_at: string | null;
+    client_id: number | null;
+    client_name?: string | null;
+    link: string | null;
+};
+
+export type SubscriptionPeriodRow = {
+    id: number;
+    period_start: string;
+    period_end: string;
+    status: 'pending_payment' | 'paid' | 'overridden' | 'waived';
+    status_label: string;
+    invoice_id: number | null;
+    override_reason: string | null;
+    can_undo: boolean;
+};
+
+export type Expense = {
+    id: number;
+    spent_on: string;
+    category: string;
+    category_label: string;
+    vendor: string | null;
+    description: string;
+    amount: number;
+    amount_rupees: string;
+    gst_amount: number;
+    gst_amount_rupees: string;
+    net_cost: number;
+    payment_method: string | null;
+    reference: string | null;
+    is_recurring: boolean;
+    has_receipt: boolean;
+    notes: string | null;
 };

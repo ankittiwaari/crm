@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Subscription;
+use App\Models\SubscriptionPeriod;
 use App\Support\Money;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -47,6 +48,20 @@ class SubscriptionResource extends JsonResource
             'current_period_start' => $this->current_period_start?->toDateString(),
             'current_period_end' => $this->current_period_end?->toDateString(),
             'days_until_renewal' => $this->daysUntilRenewal(),
+            'renewal_state' => $this->renewalState(),
+            'grace_ends_on' => $this->graceEndsOn()?->toDateString(),
+            'next_period' => ($next = $this->nextPeriod()) ? ['start' => $next[0]->toDateString(), 'end' => $next[1]->toDateString()] : null,
+            'periods' => $this->whenLoaded('periods', fn () => $this->periods->map(fn (SubscriptionPeriod $period): array => [
+                'id' => $period->id,
+                'period_start' => $period->period_start->toDateString(),
+                'period_end' => $period->period_end->toDateString(),
+                'status' => $period->status->value,
+                'status_label' => $period->status->label(),
+                'invoice_id' => $period->invoice_id,
+                'override_reason' => $period->override_reason,
+                'can_undo' => in_array($period->status->value, ['overridden', 'waived'], true)
+                    && $this->current_period_end?->equalTo($period->period_end),
+            ])->all()),
             'auto_renew' => $this->auto_renew,
             'renewal_notice_days' => $this->renewal_notice_days,
             'grace_days' => $this->grace_days,

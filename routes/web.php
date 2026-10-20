@@ -5,6 +5,7 @@ use App\Http\Controllers\ClientActivityController;
 use App\Http\Controllers\ClientContactController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\InvoiceCancelController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceFinaliseController;
@@ -12,8 +13,11 @@ use App\Http\Controllers\InvoiceMessageController;
 use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ReminderController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\SubscriptionRateChangeController;
+use App\Http\Controllers\SubscriptionRenewalController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
@@ -29,6 +33,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('clients.subscriptions', SubscriptionController::class)->only(['store', 'update', 'destroy'])->shallow();
     Route::post('subscriptions/{subscription}/rate-changes', [SubscriptionRateChangeController::class, 'store'])
         ->name('subscriptions.rate-changes.store');
+    Route::post('subscriptions/{subscription}/renewals', [SubscriptionRenewalController::class, 'store'])
+        ->name('subscriptions.renewals.store');
+    Route::delete('renewals/{period}', [SubscriptionRenewalController::class, 'destroy'])
+        ->name('renewals.destroy');
+
+    Route::resource('reminders', ReminderController::class)->only(['index', 'store', 'update', 'destroy']);
+
+    Route::resource('expenses', ExpenseController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('reports/export', [ReportController::class, 'export'])->name('reports.export');
+
+    Route::get('expenses/{expense}/receipt', [ExpenseController::class, 'receipt'])->name('expenses.receipt');
 
     Route::resource('products', ProductController::class)->except(['create', 'show', 'edit']);
 
@@ -37,6 +53,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('invoices/{invoice}/cancel', InvoiceCancelController::class)->name('invoices.cancel');
     Route::get('invoices/{invoice}/pdf', [InvoicePdfController::class, 'show'])->name('invoices.pdf');
     Route::post('invoices/{invoice}/whatsapp', [InvoiceMessageController::class, 'whatsapp'])->name('invoices.whatsapp');
+    Route::post('invoices/{invoice}/whatsapp-api', [InvoiceMessageController::class, 'whatsappApi'])->name('invoices.whatsapp-api');
     Route::post('invoices/{invoice}/email', [InvoiceMessageController::class, 'email'])->name('invoices.email');
     Route::resource('invoices.payments', InvoicePaymentController::class)->only(['store', 'destroy'])->shallow();
 

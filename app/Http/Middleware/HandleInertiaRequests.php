@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\CompanyProfile;
+use App\Models\Reminder;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -43,6 +44,7 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'company' => fn (): ?array => $request->user() ? $this->company() : null,
+            'remindersDue' => fn (): int => $request->user() ? Reminder::query()->due()->count() : 0,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

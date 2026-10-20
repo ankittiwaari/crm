@@ -12,3 +12,5 @@ Schedule::command('crm:daily-digest')->dailyAt('08:00')->withoutOverlapping()->o
 Schedule::command('backup:clean')->dailyAt('01:30')->onOneServer();
 Schedule::command('backup:run')->dailyAt('02:00')->onOneServer();
 Schedule::command('backup:monitor')->dailyAt('03:00')->onOneServer();
+
+Schedule::command('sanctum:prune-expired --hours=24')->daily()->onOneServer();

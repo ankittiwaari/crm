@@ -1,9 +1,25 @@
 import { Link, router } from '@inertiajs/react';
-import { ArrowRight, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import {
+    ArrowRight,
+    CheckCircle2,
+    MoreHorizontal,
+    Pencil,
+    Trash2,
+    Undo2,
+} from 'lucide-react';
+import { useState } from 'react';
 import { create as createInvoice } from '@/actions/App/Http/Controllers/InvoiceController';
 import { destroy } from '@/actions/App/Http/Controllers/SubscriptionController';
 import { ConfirmDialog } from '@/components/crm/confirm-dialog';
+import { RenewalOverrideForm } from '@/components/crm/renewal-override-form';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -13,6 +29,7 @@ import {
 import { periodProgress } from '@/lib/billing';
 import { formatDate, formatInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { destroy as undoRenewal } from '@/routes/renewals';
 import type { Subscription } from '@/types';
 
 function renewalTone(subscription: Subscription): {
@@ -24,6 +41,22 @@ function renewalTone(subscription: Subscription): {
 
     if (days === null) {
         return { text: '', className: '', bar: 'bg-primary' };
+    }
+
+    if (subscription.renewal_state === 'in_grace') {
+        return {
+            text: `Renewal unpaid · grace until ${formatDate(subscription.grace_ends_on)}`,
+            className: 'text-orange-700 dark:text-orange-400',
+            bar: 'bg-orange-500',
+        };
+    }
+
+    if (subscription.status === 'expired') {
+        return {
+            text: 'Expired · not renewed',
+            className: 'text-red-700 dark:text-red-400',
+            bar: 'bg-red-600',
+        };
     }
 
     if (days < 0) {
@@ -74,6 +107,11 @@ export function SubscriptionCard({
     const isPerUnit = subscription.pricing_model === 'per_unit';
     const tone = renewalTone(subscription);
     const history = [...(subscription.rate_revisions ?? [])].reverse();
+    const [renewing, setRenewing] = useState(false);
+    const canRenew =
+        subscription.next_period !== null &&
+        (subscription.is_live || subscription.status === 'expired');
+    const periods = subscription.periods ?? [];
 
     const summary = [
         isPerUnit
@@ -195,6 +233,16 @@ export function SubscriptionCard({
                         </Link>
                     </Button>
                 )}
+                {canRenew && (
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setRenewing(true)}
+                    >
+                        <CheckCircle2 />
+                        Mark renewed…
+                    </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={onChangeRate}>
                     Change rate…
                 </Button>
@@ -236,6 +284,68 @@ export function SubscriptionCard({
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
+
+            {periods.length > 0 && (
+                <div className="space-y-2 border-t pt-4">
+                    <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                        Renewals
+                    </p>
+                    <ul className="space-y-1.5 text-sm">
+                        {periods.map((period) => (
+                            <li
+                                key={period.id}
+                                className="flex flex-wrap items-center gap-2"
+                            >
+                                <span className="text-muted-foreground">
+                                    {formatDate(period.period_start)} –{' '}
+                                    {formatDate(period.period_end)}
+                                </span>
+                                <span
+                                    className={cn(
+                                        'rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                                        period.status === 'paid'
+                                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                                            : period.status ===
+                                                'pending_payment'
+                                              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                                              : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200',
+                                    )}
+                                >
+                                    {period.status_label}
+                                </span>
+                                {period.override_reason && (
+                                    <span className="text-xs text-muted-foreground">
+                                        {period.override_reason}
+                                    </span>
+                                )}
+                                {period.can_undo && (
+                                    <ConfirmDialog
+                                        trigger={
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 px-2 text-xs"
+                                            >
+                                                <Undo2 />
+                                                Undo
+                                            </Button>
+                                        }
+                                        title="Undo this manual renewal?"
+                                        description="The subscription goes back to its previous period."
+                                        confirmLabel="Undo renewal"
+                                        onConfirm={() =>
+                                            router.delete(
+                                                undoRenewal.url(period.id),
+                                                { preserveScroll: true },
+                                            )
+                                        }
+                                    />
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             {history.length > 0 && (
                 <div className="space-y-2 border-t pt-4">
@@ -279,6 +389,26 @@ export function SubscriptionCard({
                     </ol>
                 </div>
             )}
+
+            <Dialog open={renewing} onOpenChange={setRenewing}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Mark {subscription.product_name} renewed
+                        </DialogTitle>
+                        <DialogDescription>
+                            Renews without waiting for full payment. You can
+                            undo this while the period is unpaid.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {renewing && (
+                        <RenewalOverrideForm
+                            subscription={subscription}
+                            onDone={() => setRenewing(false)}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
         </article>
     );
 }

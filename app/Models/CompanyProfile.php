@@ -7,6 +7,7 @@ use App\Enums\MsmeCategory;
 use Carbon\CarbonImmutable;
 use Database\Factories\CompanyProfileFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -45,6 +46,16 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $invoice_notes
  * @property string|null $invoice_terms
  * @property string|null $signatory_name
+ * @property bool $whatsapp_enabled
+ * @property string|null $whatsapp_waba_id
+ * @property string|null $whatsapp_phone_number_id
+ * @property string|null $whatsapp_display_number
+ * @property string|null $whatsapp_access_token Encrypted at rest.
+ * @property string|null $whatsapp_app_secret Encrypted at rest.
+ * @property string|null $whatsapp_verify_token
+ * @property array<string, array<string, mixed>>|null $whatsapp_templates
+ * @property array<string, string>|null $whatsapp_template_statuses
+ * @property CarbonImmutable|null $whatsapp_templates_synced_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
@@ -55,6 +66,7 @@ use Illuminate\Support\Facades\Storage;
     'bank_account_name', 'bank_name', 'bank_branch', 'bank_account_number', 'bank_ifsc', 'upi_id',
     'invoice_prefix', 'payment_terms_days', 'invoice_notes', 'invoice_terms', 'signatory_name',
 ])]
+#[Hidden(['whatsapp_access_token', 'whatsapp_app_secret', 'whatsapp_verify_token'])]
 class CompanyProfile extends Model
 {
     /** @use HasFactory<CompanyProfileFactory> */
@@ -78,6 +90,12 @@ class CompanyProfile extends Model
             'msme_category_effective_from' => 'date',
             'show_msme_clause' => 'boolean',
             'payment_terms_days' => 'integer',
+            'whatsapp_enabled' => 'boolean',
+            'whatsapp_access_token' => 'encrypted',
+            'whatsapp_app_secret' => 'encrypted',
+            'whatsapp_templates' => 'array',
+            'whatsapp_template_statuses' => 'array',
+            'whatsapp_templates_synced_at' => 'datetime',
         ];
     }
 
@@ -125,5 +143,29 @@ class CompanyProfile extends Model
             'GSTIN' => blank($this->gstin),
             'Bank or UPI details' => blank($this->bank_account_number) && blank($this->upi_id),
         ]));
+    }
+
+    /**
+     * Whether automated WhatsApp messages can be sent through the Cloud API.
+     */
+    public function whatsappReady(): bool
+    {
+        return $this->whatsapp_enabled
+            && filled($this->whatsapp_phone_number_id)
+            && filled($this->whatsapp_access_token);
+    }
+
+    /**
+     * The approved template configured for a message type, if any.
+     *
+     * @return array{name: string, language: string}|null
+     */
+    public function whatsappTemplate(string $type): ?array
+    {
+        $template = $this->whatsapp_templates[$type] ?? null;
+
+        return is_array($template) && filled($template['name'] ?? null)
+            ? ['name' => (string) $template['name'], 'language' => (string) ($template['language'] ?? 'en')]
+            : null;
     }
 }

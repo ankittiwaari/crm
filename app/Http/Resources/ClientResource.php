@@ -37,6 +37,7 @@ class ClientResource extends JsonResource
             'pincode' => $this->pincode,
             'gstin' => $this->gstin,
             'notes' => $this->notes,
+            'whatsapp_automation' => $this->whatsapp_automation,
             'last_activity_at' => $this->last_activity_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'primary_contact' => $this->whenLoaded('primaryContact', fn () => $this->primaryContact ? ContactResource::make($this->primaryContact)->resolve($request) : null),

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\WhatsAppSettingsController;
 use Illuminate\Auth\Middleware\RequirePassword;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('user-password.update');
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
+
+    Route::get('settings/whatsapp', [WhatsAppSettingsController::class, 'edit'])->name('whatsapp-settings.edit');
+    Route::patch('settings/whatsapp', [WhatsAppSettingsController::class, 'update'])->name('whatsapp-settings.update');
+    Route::post('settings/whatsapp/test', [WhatsAppSettingsController::class, 'test'])->name('whatsapp-settings.test');
+    Route::post('settings/whatsapp/templates/sync', [WhatsAppSettingsController::class, 'syncTemplates'])->name('whatsapp-settings.sync-templates');
+    Route::post('settings/whatsapp/test-message', [WhatsAppSettingsController::class, 'testMessage'])
+        ->middleware('throttle:10,1')
+        ->name('whatsapp-settings.test-message');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

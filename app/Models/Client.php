@@ -30,13 +30,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $state_code
  * @property string|null $pincode
  * @property string|null $gstin
+ * @property bool $whatsapp_automation
  * @property string|null $notes
  * @property CarbonImmutable|null $last_activity_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property CarbonImmutable|null $deleted_at
  */
-#[Fillable(['name', 'type', 'status', 'source', 'email', 'phone', 'website', 'billing_address', 'city', 'state_code', 'pincode', 'gstin', 'notes'])]
+#[Fillable(['name', 'type', 'status', 'source', 'email', 'phone', 'website', 'billing_address', 'city', 'state_code', 'pincode', 'gstin', 'whatsapp_automation', 'notes'])]
 class Client extends Model
 {
     /** @use HasFactory<ClientFactory> */
@@ -53,6 +54,7 @@ class Client extends Model
             'type' => ClientType::class,
             'status' => ClientStatus::class,
             'last_activity_at' => 'datetime',
+            'whatsapp_automation' => 'boolean',
         ];
     }
 

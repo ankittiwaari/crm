@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Invoices\SaveDraftInvoice;
-use App\Enums\InvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Http\Requests\Invoices\InvoiceRequest;
 use App\Http\Requests\Products\ProductRequest;
@@ -12,12 +11,14 @@ use App\Models\Client;
 use App\Models\CompanyProfile;
 use App\Models\Invoice;
 use App\Models\Product;
+use App\Models\SubscriptionPeriod;
+use App\Queries\InvoiceList;
 use App\Services\Invoices\InvoiceMessages;
 use App\Services\Invoices\InvoiceParties;
 use App\Services\Invoices\InvoiceSuggestions;
-use App\Support\FinancialYear;
+use App\Services\WhatsApp\WhatsAppMessenger;
+use App\Services\WhatsApp\WhatsAppTemplates;
 use App\Support\Money;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -25,49 +26,16 @@ use Inertia\Response;
 
 class InvoiceController extends Controller
 {
-    private const array FILTERS = ['all', 'draft', 'unpaid', 'overdue', 'paid', 'cancelled'];
-
     public function __construct(private InvoiceParties $parties) {}
 
     public function index(Request $request): Response
     {
-        $filter = in_array($request->string('filter')->value(), self::FILTERS, true) ? $request->string('filter')->value() : 'all';
-        $search = $request->string('search')->trim()->value();
-        $year = FinancialYear::current();
-
-        $invoices = Invoice::query()
-            ->with('client:id,name')
-            ->when($search !== '', fn (Builder $query) => $query->where(fn (Builder $query) => $query
-                ->where('number', 'like', "%{$search}%")
-                ->orWhereHas('client', fn (Builder $client) => $client->withTrashed()->where('name', 'like', "%{$search}%"))))
-            ->when($filter === 'draft', fn (Builder $query) => $query->where('status', InvoiceStatus::Draft))
-            ->when($filter === 'unpaid', fn (Builder $query) => $query->open())
-            ->when($filter === 'overdue', fn (Builder $query) => $query->overdue())
-            ->when($filter === 'paid', fn (Builder $query) => $query->where('status', InvoiceStatus::Paid))
-            ->when($filter === 'cancelled', fn (Builder $query) => $query->where('status', InvoiceStatus::Cancelled))
-            ->orderByRaw("case when status = 'draft' then 0 else 1 end")
-            ->latest('issue_date')
-            ->latest('id')
-            ->paginate(25)
-            ->withQueryString();
-
-        $open = Invoice::query()->open()->get(['total', 'amount_settled', 'due_date', 'status']);
-        $overdue = $open->filter(fn (Invoice $invoice): bool => $invoice->isOverdue());
+        $list = new InvoiceList($request);
 
         return Inertia::render('invoices/index', [
-            'invoices' => InvoiceResource::collection($invoices),
-            'filters' => ['filter' => $filter, 'search' => $search],
-            'summary' => [
-                'outstanding' => $open->sum(fn (Invoice $invoice): int => $invoice->balanceDue()),
-                'outstanding_count' => $open->count(),
-                'overdue' => $overdue->sum(fn (Invoice $invoice): int => $invoice->balanceDue()),
-                'overdue_count' => $overdue->count(),
-                'invoiced_this_year' => (int) Invoice::query()
-                    ->whereNotIn('status', [InvoiceStatus::Draft, InvoiceStatus::Cancelled])
-                    ->whereBetween('issue_date', [$year->start(), $year->end()])
-                    ->sum('total'),
-                'financial_year' => $year->label(),
-            ],
+            'invoices' => InvoiceResource::collection($list->paginate()),
+            'filters' => $list->filters(),
+            'summary' => InvoiceList::summary(),
         ]);
     }
 
@@ -99,7 +67,7 @@ class InvoiceController extends Controller
         return to_route('invoices.show', $invoice);
     }
 
-    public function show(Invoice $invoice): Response
+    public function show(Invoice $invoice, WhatsAppMessenger $whatsapp): Response
     {
         $invoice->load(['items', 'payments' => fn ($query) => $query->latest('paid_on')->latest('id'), 'messages' => fn ($query) => $query->latest('sent_at')]);
         $client = Client::withTrashed()->findOrFail($invoice->client_id);
@@ -118,11 +86,25 @@ class InvoiceController extends Controller
                     'email' => $contact->email,
                     'whatsapp_target' => $contact->whatsappTarget(),
                     'receives_invoices' => $contact->receives_invoices,
+                    'whatsapp_api_blocker' => $whatsapp->blocker(
+                        $contact,
+                        $invoice->isOverdue() ? WhatsAppTemplates::PAYMENT_REMINDER : WhatsAppTemplates::INVOICE_ISSUED,
+                    ),
                 ])->all(),
             ],
+            'renews' => SubscriptionPeriod::query()
+                ->whereBelongsTo($invoice)
+                ->with('subscription.product')
+                ->get()
+                ->map(fn (SubscriptionPeriod $period): array => [
+                    'product_name' => $period->subscription->product->name,
+                    'period_end' => $period->period_end->toDateString(),
+                    'status' => $period->status->value,
+                ]),
             'missingProfileDetails' => $invoice->isDraft() ? CompanyProfile::current()->missingInvoiceDetails() : [],
             'paymentMethods' => PaymentMethod::options(),
             'linkDays' => InvoiceMessages::LINK_DAYS,
+            'whatsappApiReady' => CompanyProfile::current()->whatsappReady(),
         ]);
     }
 

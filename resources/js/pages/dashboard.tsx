@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { show as showClient } from '@/actions/App/Http/Controllers/ClientController';
 import { show as showInvoice } from '@/actions/App/Http/Controllers/InvoiceController';
+import { ReminderRow } from '@/components/crm/reminder-row';
 import { Button } from '@/components/ui/button';
 import { formatDate, formatInr } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -19,10 +20,11 @@ import { dashboard } from '@/routes';
 import { edit as businessProfile } from '@/routes/business-profile';
 import { index as clients } from '@/routes/clients';
 import { index as products } from '@/routes/products';
-import type { BusinessProfileSummary } from '@/types';
+import { index as reminders } from '@/routes/reminders';
+import type { BusinessProfileSummary, Reminder } from '@/types';
 
 type UpcomingItem = {
-    kind: 'renewal' | 'promo_ends';
+    kind: 'renewal' | 'promo_ends' | 'in_grace';
     date: string;
     subscription_id: number;
     client_id: number;
@@ -54,6 +56,7 @@ type Props = {
         due_date: string;
         days_overdue: number;
     }[];
+    today: Reminder[];
     upcoming: UpcomingItem[];
     lookaheadDays: number;
 };
@@ -88,6 +91,7 @@ export default function Dashboard({
     setup,
     metrics,
     overdue,
+    today,
     upcoming,
     lookaheadDays,
 }: Props) {
@@ -185,6 +189,37 @@ export default function Dashboard({
                 <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
                     <div className="flex min-w-0 flex-col gap-6">
                         <section className="overflow-hidden rounded-xl border bg-card shadow-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
+                                <div>
+                                    <h2 className="text-base font-semibold">
+                                        Today
+                                    </h2>
+                                    <p className="text-sm text-muted-foreground">
+                                        {today.length === 0
+                                            ? 'Nothing needs you right now.'
+                                            : `${today.length} ${today.length === 1 ? 'thing needs' : 'things need'} you. Tick them off or snooze.`}
+                                    </p>
+                                </div>
+                                <Button asChild size="sm" variant="ghost">
+                                    <Link href={reminders()}>
+                                        All reminders
+                                        <ArrowRight />
+                                    </Link>
+                                </Button>
+                            </div>
+                            {today.length > 0 && (
+                                <ul className="divide-y">
+                                    {today.map((reminder) => (
+                                        <ReminderRow
+                                            key={reminder.id}
+                                            reminder={reminder}
+                                        />
+                                    ))}
+                                </ul>
+                            )}
+                        </section>
+
+                        <section className="overflow-hidden rounded-xl border bg-card shadow-xs">
                             <div className="border-b px-5 py-4">
                                 <h2 className="text-base font-semibold">
                                     Coming up
@@ -256,6 +291,8 @@ export default function Dashboard({
                                         const days = daysFromToday(item.date);
                                         const isRenewal =
                                             item.kind === 'renewal';
+                                        const inGrace =
+                                            item.kind === 'in_grace';
 
                                         return (
                                             <li
@@ -265,14 +302,18 @@ export default function Dashboard({
                                                 <span
                                                     className={cn(
                                                         'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                                                        isRenewal
-                                                            ? days <= 7
-                                                                ? 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'
-                                                                : 'bg-accent text-accent-foreground'
-                                                            : 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950/50 dark:text-fuchsia-300',
+                                                        inGrace
+                                                            ? 'bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300'
+                                                            : isRenewal
+                                                              ? days <= 7
+                                                                  ? 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'
+                                                                  : 'bg-accent text-accent-foreground'
+                                                              : 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950/50 dark:text-fuchsia-300',
                                                     )}
                                                 >
-                                                    {isRenewal ? (
+                                                    {inGrace ? (
+                                                        <AlertTriangle className="size-4" />
+                                                    ) : isRenewal ? (
                                                         <RefreshCw className="size-4" />
                                                     ) : (
                                                         <Sparkles className="size-4" />
@@ -280,9 +321,11 @@ export default function Dashboard({
                                                 </span>
                                                 <div className="min-w-56 flex-1">
                                                     <p className="font-medium">
-                                                        {isRenewal
-                                                            ? `${item.client_name} renews ${whenLabel(item.date)}`
-                                                            : `Promo for ${item.client_name} ends ${whenLabel(item.date)}`}
+                                                        {inGrace
+                                                            ? `${item.client_name} is in the grace period until ${formatDate(item.date)}`
+                                                            : isRenewal
+                                                              ? `${item.client_name} renews ${whenLabel(item.date)}`
+                                                              : `Promo for ${item.client_name} ends ${whenLabel(item.date)}`}
                                                     </p>
                                                     <p className="text-sm text-muted-foreground">
                                                         {item.product_name} ·{' '}
@@ -291,9 +334,11 @@ export default function Dashboard({
                                                             item.billing_cycle_short
                                                         }{' '}
                                                         ·{' '}
-                                                        {isRenewal
-                                                            ? `period ends ${formatDate(item.date)}`
-                                                            : 'review the rate before renewal'}
+                                                        {inGrace
+                                                            ? 'renewal unpaid, record payment or renew manually'
+                                                            : isRenewal
+                                                              ? `period ends ${formatDate(item.date)}`
+                                                              : 'review the rate before renewal'}
                                                     </p>
                                                 </div>
                                                 <Button

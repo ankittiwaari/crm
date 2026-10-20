@@ -13,6 +13,7 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             company: SharedCompany | null;
+            remindersDue: number;
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

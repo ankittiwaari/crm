@@ -33,7 +33,11 @@ import { destroy as destroyPayment } from '@/actions/App/Http/Controllers/Invoic
 import { show as pdf } from '@/actions/App/Http/Controllers/InvoicePdfController';
 import { show as showClient } from '@/actions/App/Http/Controllers/ClientController';
 import { edit as businessProfile } from '@/routes/business-profile';
-import { cancel, finalise as finaliseRoute } from '@/routes/invoices';
+import {
+    cancel,
+    finalise as finaliseRoute,
+    whatsappApi,
+} from '@/routes/invoices';
 import { ConfirmDialog } from '@/components/crm/confirm-dialog';
 import { Field } from '@/components/crm/field';
 import { InvoiceStatusBadge } from '@/components/crm/invoice-status-badge';
@@ -58,6 +62,7 @@ type InvoiceContact = {
     email: string | null;
     whatsapp_target: string | null;
     receives_invoices: boolean;
+    whatsapp_api_blocker: string | null;
 };
 
 type Props = {
@@ -68,9 +73,11 @@ type Props = {
         email: string | null;
         contacts: InvoiceContact[];
     };
+    renews: { product_name: string; period_end: string; status: string }[];
     missingProfileDetails: string[];
     paymentMethods: Option[];
     linkDays: number;
+    whatsappApiReady: boolean;
 };
 
 function WhatsAppSendButton({
@@ -164,9 +171,11 @@ function CancelForm({
 export default function InvoiceShow({
     invoice,
     client,
+    renews,
     missingProfileDetails,
     paymentMethods,
     linkDays,
+    whatsappApiReady,
 }: Props) {
     setLayoutProps({
         breadcrumbs: [
@@ -325,6 +334,21 @@ export default function InvoiceShow({
                                         ` · ${invoice.days_overdue}d late`}
                                 </dd>
                             </dl>
+                            {renews.length > 0 &&
+                                invoice.status !== 'cancelled' && (
+                                    <p className="rounded-lg bg-accent px-3 py-2 text-sm text-accent-foreground">
+                                        {invoice.status === 'paid'
+                                            ? 'Renewed: '
+                                            : 'When paid in full, this renews '}
+                                        {renews
+                                            .map(
+                                                (renewal) =>
+                                                    `${renewal.product_name} to ${formatDate(renewal.period_end)}`,
+                                            )
+                                            .join(', ')}
+                                        .
+                                    </p>
+                                )}
                             {invoice.cancellation_reason && (
                                 <p className="rounded-lg bg-muted p-3 text-sm">
                                     Cancelled: {invoice.cancellation_reason}
@@ -424,6 +448,56 @@ export default function InvoiceShow({
                                     <p className="text-xs font-medium text-muted-foreground">
                                         Send to client
                                     </p>
+                                    {whatsappApiReady &&
+                                        whatsappContacts.map((contact) => (
+                                            <Button
+                                                key={`api-${contact.id}`}
+                                                className="w-full justify-start"
+                                                disabled={
+                                                    contact.whatsapp_api_blocker !==
+                                                    null
+                                                }
+                                                title={
+                                                    contact.whatsapp_api_blocker ??
+                                                    undefined
+                                                }
+                                                onClick={() =>
+                                                    router.post(
+                                                        whatsappApi.url(
+                                                            invoice.id,
+                                                        ),
+                                                        { contact: contact.id },
+                                                        {
+                                                            preserveScroll: true,
+                                                            onError: (errors) =>
+                                                                setErrors(
+                                                                    errors,
+                                                                ),
+                                                        },
+                                                    )
+                                                }
+                                            >
+                                                <Send />
+                                                {invoice.is_overdue
+                                                    ? 'Send reminder'
+                                                    : 'Send invoice'}{' '}
+                                                to {contact.name} automatically
+                                            </Button>
+                                        ))}
+                                    {whatsappApiReady &&
+                                        whatsappContacts.some(
+                                            (contact) =>
+                                                contact.whatsapp_api_blocker,
+                                        ) && (
+                                            <p className="text-xs text-muted-foreground">
+                                                {
+                                                    whatsappContacts.find(
+                                                        (contact) =>
+                                                            contact.whatsapp_api_blocker,
+                                                    )?.whatsapp_api_blocker
+                                                }
+                                            </p>
+                                        )}
                                     {whatsappContacts.map((contact) => (
                                         <WhatsAppSendButton
                                             key={contact.id}
@@ -554,15 +628,37 @@ export default function InvoiceShow({
                                             key={message.id}
                                             className="flex items-center gap-2"
                                         >
-                                            {message.channel ===
-                                            'whatsapp_link' ? (
+                                            {message.channel !== 'email' ? (
                                                 <MessageCircle className="size-4 text-emerald-600" />
                                             ) : (
                                                 <Mail className="size-4 text-muted-foreground" />
                                             )}
                                             <span className="flex-1 truncate">
-                                                {message.channel_label} to{' '}
-                                                {message.recipient}
+                                                {message.direction === 'inbound'
+                                                    ? `Reply from ${message.recipient}`
+                                                    : `${message.channel_label} to ${message.recipient}`}
+                                                {message.status &&
+                                                    message.status !==
+                                                        'received' && (
+                                                        <span
+                                                            title={
+                                                                message.error ??
+                                                                undefined
+                                                            }
+                                                            className={cn(
+                                                                'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                                                                message.status ===
+                                                                    'failed'
+                                                                    ? 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'
+                                                                    : message.status ===
+                                                                        'read'
+                                                                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                                                                      : 'bg-muted text-muted-foreground',
+                                                            )}
+                                                        >
+                                                            {message.status}
+                                                        </span>
+                                                    )}
                                             </span>
                                             <span className="text-xs text-muted-foreground">
                                                 {timeAgo(message.sent_at)}

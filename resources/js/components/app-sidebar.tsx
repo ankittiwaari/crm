@@ -1,5 +1,14 @@
-import { Link } from '@inertiajs/react';
-import { Building2, FileText, LayoutGrid, Package, Users } from 'lucide-react';
+import { Link, usePage } from '@inertiajs/react';
+import {
+    BarChart3,
+    Bell,
+    Building2,
+    FileText,
+    LayoutGrid,
+    Package,
+    Receipt,
+    Users,
+} from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -15,8 +24,11 @@ import {
 import { dashboard } from '@/routes';
 import { edit as businessProfile } from '@/routes/business-profile';
 import { index as clients } from '@/routes/clients';
+import { index as expenses } from '@/routes/expenses';
 import { index as invoices } from '@/routes/invoices';
 import { index as products } from '@/routes/products';
+import { index as reminders } from '@/routes/reminders';
+import { index as reports } from '@/routes/reports';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -40,6 +52,16 @@ const mainNavItems: NavItem[] = [
         href: products(),
         icon: Package,
     },
+    {
+        title: 'Expenses',
+        href: expenses(),
+        icon: Receipt,
+    },
+    {
+        title: 'Reports',
+        href: reports(),
+        icon: BarChart3,
+    },
 ];
 
 const companyNavItems: NavItem[] = [
@@ -51,6 +73,18 @@ const companyNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
+    const { remindersDue } = usePage().props;
+    const items: NavItem[] = [
+        mainNavItems[0],
+        {
+            title: 'Reminders',
+            href: reminders(),
+            icon: Bell,
+            badge: remindersDue,
+        },
+        ...mainNavItems.slice(1),
+    ];
+
     return (
         <Sidebar collapsible="icon" variant="sidebar">
             <SidebarHeader>
@@ -66,7 +100,7 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
+                <NavMain items={items} />
                 <NavMain items={companyNavItems} label="Company" />
             </SidebarContent>
 

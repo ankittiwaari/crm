@@ -202,14 +202,13 @@ Clients in India read WhatsApp. They don't reliably read email. So WhatsApp is t
 
 **Stage 2: WhatsApp Business Cloud API (Phase 4b)**
 
-_You're already a Meta Tech Provider with a production app, so you **don't need a new Meta app**. Reuse it:_
+_Revised 2026-10-21 after reviewing Meta's terms: use a **separate Meta app** for the CRM, owned by your business, as a "Direct Developer"._
 
-- One Meta app can work with several WhatsApp Business Accounts (WABAs). Your own business messaging is just another WABA, owned by your own Business Portfolio, so no extra App Review or advanced access is needed for it.
-- **Phone number:** register a **separate number** for the CRM (on your own WABA, or a new WABA in your portfolio) rather than sharing your product's number. That keeps billing messages, quality rating and messaging limits separate from your product traffic.
-- **Webhook routing:** an app has only one default callback URL, which your production product already uses. Meta supports a **per-WABA or per-phone-number override**: `POST /<WABA_ID>/subscribed_apps` (or on the phone number) with `override_callback_uri=https://crm.yourdomain/webhooks/whatsapp` + `verify_token`. Message and status webhooks for the CRM number then go straight to the CRM, and your product's webhook is untouched.
-- **Caveat:** template-status and account-level webhooks (`message_template_status_update`, `account_update`, …) **don't support overrides**. They keep going to your product's endpoint. The CRM therefore **polls template status** via the Graph API (`GET /<WABA_ID>/message_templates`, a "Sync templates" button plus a daily job) instead of relying on those webhooks.
-- **Credentials:** create a dedicated **System User** in your Business Portfolio with access to _only_ the CRM's WABA, then generate a permanent token with `whatsapp_business_messaging` + `whatsapp_business_management`. A CRM leak then can't touch your product's WABAs.
-- **When a separate app would make sense:** only if you want full isolation, for example so an app-level restriction or token rotation on the product app can't affect your billing messages. It's optional, and the `WhatsAppGateway` config makes it a settings change, not a code change.
+- **Why not reuse the Tech Provider app:** Meta Platform Terms §5.b says a Tech Provider uses the Platform and Platform Data "on behalf of and at the direction of your Client … and not for your own purposes". Your production app is a Tech Provider app (its primary purpose is serving clients), so sending your own business's invoices and reminders through it is at best a grey area. §3.a.vii also requires re-submitting for review when an app's core functionality or data processing changes.
+- **A separate app is easy:** Meta's app review docs say "if you are using the API for yourself as a Direct Developer, you do not need Advanced access or app review". Business apps get Standard access automatically for assets your business owns.
+- **Other benefits:** its own webhook URL (no overrides needed, and template/account webhooks arrive too, which overrides cannot carry); a separate annual Data Use Checkup scope; and a restriction or token rotation on one app cannot stop the other.
+- **Setup:** create a Business-type app in the same Business Portfolio, add the WhatsApp product, put the CRM's number on its own WABA, create a System User with access only to that WABA, generate a permanent token with `whatsapp_business_messaging` + `whatsapp_business_management`, and set the app's webhook to `https://<crm-domain>/api/webhooks/whatsapp`.
+- Message templates are submitted under the CRM's WABA (utility category).
 - The code sits behind a `WhatsAppGateway` interface (`MetaCloudGateway` implementation), with app ID, WABA ID, phone-number ID and token all coming from the editable `company_profile`.
 - A custom `WhatsAppChannel` for Laravel Notifications lets the same `InvoiceIssued` / `RenewalDue` / `InvoiceOverdue` notifications go out via `['whatsapp', 'mail', 'database']`.
 - Business-initiated messages need **Meta-approved templates** (utility category). The invoice PDF goes as a document attachment.
@@ -333,6 +332,7 @@ Each phase ships with Pest feature tests and passes `composer test` (Pint, Laras
 - `subscription_periods` (the renewal ledger) arrives with invoicing in Phase 3/4.
 
 **Phase 3: Invoicing** ✅ done (2026-10-20)
+
 - `invoices`, `invoice_items`, `payments`, `invoice_sequences`, `messages`; dompdf installed.
 - `InvoiceCalculator`: integer paise, GST per line rounded half-up, CGST+SGST within the state or IGST across states (place of supply from the client's GSTIN/state), total rounded to the rupee.
 - Drafts (no number) → **Issue** assigns `INV/2026-27/0001` (gapless per Indian financial year, row-locked counter, restarts every April) and freezes seller and client snapshots. Issued invoices can't be edited or deleted, only cancelled (number stays used).
@@ -343,33 +343,62 @@ Each phase ships with Pest feature tests and passes `composer test` (Pint, Laras
 - Client page shows invoices and amount outstanding; subscription cards have "Create (renewal) invoice"; dashboard shows Outstanding and overdue invoices (flagging those past 45 days).
 - Deferred to Phase 4: full payment advancing the subscription period (renewal ledger) and the manual override.
 
-**Phase 4: Renewals & reminders (2 days)**
+**Phase 4: Renewals & reminders** ✅ done (2026-10-20)
 
-- `SubscriptionPeriod` ledger, `GenerateRenewalInvoice`, advance-on-full-payment, override and revert, grace period, promo-review reminders.
-- Reminder model and UI. Scheduled commands. Mail and database notifications, with a bell icon in the header.
-- Install `spatie/laravel-backup` and schedule it. Set up the server cron and queue worker.
+- `subscription_periods` renewal ledger: issuing an invoice registers its periods as awaiting payment; **full payment** advances the subscription (and reactivates an expired one); removing the payment or cancelling the invoice reverses it. Part payments never renew.
+- **Mark renewed…** override with a required reason (or a free extension), linked to any later invoice for that period, undoable while it is the latest period.
+- Grace period: after the period ends the subscription shows "renewal unpaid · grace until …"; `crm:daily-checks` expires it after the grace days.
+- `reminders` (renewal, promo review, payment follow-up, follow-up, general) with unique keys so the daily sweep never duplicates; activity follow-up dates become reminders; renewal/payment reminders complete themselves when the renewal or payment happens.
+- `crm:daily-checks` (07:00): renewal reminders in the notice window, draft renewal invoices for auto-renew subscriptions, promo reminders 30 days ahead, weekly reminders for overdue invoices, expiry after grace.
+- `crm:daily-digest` (08:00): morning email (to-dos, clients in grace, overdue invoices, renewals in 30 days); skipped on quiet days.
+- Reminders page (due / upcoming / done, quick add, snooze, done), red count on the header bell and sidebar, "Today" inbox on the dashboard, grace clients in "Coming up", invoice page says what paying renews.
+- Backups: `spatie/laravel-backup` (database + `storage/app`), cleanup 01:30, backup 02:00, monitor 03:00; failures only are emailed; destination disks from `BACKUP_DISKS`.
+- Requires the server cron: `* * * * * cd /var/www/html/crm && php artisan schedule:run >> /dev/null 2>&1`.
 
 **Phase 4b: WhatsApp Cloud API (when ready, 2–3 days, plus Meta approval lead time)**
 
-- No new Meta app: add the CRM's number to your own WABA in your existing production app's portfolio, create a scoped System User token, and set the per-WABA `override_callback_uri` to the CRM webhook.
+- Separate Direct Developer app in your Business Portfolio (no app review needed), its own WABA and number, a scoped System User token, and the app's webhook pointed at the CRM.
 - Submit utility templates (approval usually takes minutes to hours).
 - `WhatsAppGateway` + `WhatsAppChannel`, document (PDF) messages, delivery and read webhook, opt-in enforcement, per-client automation toggle.
 
-**Phase 5: Dashboard & reports (2 days)**
+**Phase 5: Reports** ✅ done (2026-10-21)
 
-- KPI tiles, renewal pipeline, receivables ageing (0–30/31–45/46–90/90+; the 45-day line marks the MSME limit).
-- Pricing insight: promotional vs standard subscriptions, and `unit_count` data to model a future per-student price.
-- Revenue by product and by month. CSV export of invoices (GSTR-1 friendly columns: B2B and B2C, HSN/SAC summary) and payments/TDS for your CA.
+- Reports page per financial year (April–March, switchable): revenue (taxable value invoiced), GST charged, collected (payments + TDS), expenses (after claimable GST), profit.
+- Monthly revenue vs expenses chart with a table view; revenue by product (custom lines separate); money owed by age since invoice date (0–30, 31–45, 46–90, 90+) with invoices past the MSME 45-day limit listed; TDS by client for Form 26AS matching; pricing insight (average/range per year, promos, effective per-student price from recorded counts).
+- CSV downloads for any date range: invoice register, GSTR-1 B2B, B2CL (inter-state B2C over ₹1 lakh), B2CS (by state and rate), HSN/SAC summary (split B2B/B2C), payments with TDS, expenses with input GST. Ask your CA to confirm the columns against the current GST offline tool before uploading.
 
-**Phase 6: Expenses / budget (optional, 1–2 days)**
+**Phase 6: Expenses** ✅ done (2026-10-21)
 
-- Expense CRUD with receipt upload, monthly P&L view.
+- Expenses with category, vendor, amount paid, claimable input GST (with 18/12/5% "included" helpers), method, reference, private receipt upload, notes.
+- Month-by-month list with category filter, financial-year cost by category, and one-click re-adding of last month's monthly expenses.
+- Feeds the profit figures and the expenses CSV.
 
-**Phase 7: Mobile-ready API (when you start the app, 2–3 days)**
+**Phase 4b: WhatsApp Cloud API** ✅ done (2026-10-21)
+- Settings › WhatsApp: WABA ID, phone number ID, number, System User token and app secret (encrypted, never sent to the browser), on/off switch, webhook URL + verify token to copy, template names per message type with the exact text to create in WhatsApp Manager, "Sync from Meta" (approval statuses, auto-fills matching names), "Test connection", and a `hello_world` test send.
+- `WhatsAppGateway` → `MetaCloudGateway` (Graph API `v26.0`, override with `WHATSAPP_GRAPH_VERSION`); `WhatsAppMessenger` builds templates (invoice PDF attached as a document via the signed link) and only messages contacts who opted in; sends are queued (`SendWhatsAppMessage`), logged with status, and Meta rejections are recorded as failed with Meta's reason.
+- Templates: `invoice_issued`, `payment_reminder` (both with the PDF), `renewal_due`, `payment_received`.
+- Invoice page (and `POST /api/v1/invoices/{id}/whatsapp-send`): "Send invoice/reminder to … automatically", with sent / delivered / read / failed shown in the Sent list. Click-to-chat still works.
+- Per-client "Automatic WhatsApp messages": renewal notice when the renewal reminder is created, weekly overdue reminders, and a thank-you when a payment is recorded, all to the billing contact if opted in.
+- Webhook `GET/POST /api/webhooks/whatsapp`: verify-token handshake, `X-Hub-Signature-256` check with the app secret, processed in the background; delivery statuses (never move backwards), client replies logged on the timeline with a "Reply on WhatsApp" reminder (unknown numbers become a reminder too), template approval updates.
 
-- Install Sanctum. `/api/v1` routes reuse the same FormRequests, Actions, Policies and Resources.
-- Token login with 2FA, paginated list endpoints, invoice PDF endpoint.
-- Device push tokens and an FCM notification channel for renewal and overdue alerts.
+**Phase 7: Mobile app API** ✅ done (2026-10-21)
+
+- Laravel Sanctum bearer tokens (one per device, 90-day expiry via `SANCTUM_TOKEN_EXPIRATION_MINUTES`, expired tokens pruned daily); two-factor accounts get a 5-minute challenge and sign in with an authenticator or recovery code; logins limited to 5/min per email+IP, API to 120/min per user.
+- The API reuses the web app's FormRequests, Actions, Resources and the shared `DashboardData`, `ClientList`, `InvoiceList`, `SaveExpense` classes, so rules and numbers are identical on both.
+- Push notifications: devices can register FCM tokens; sending needs a Firebase project (not set up yet).
+
+API reference (`/api/v1`, JSON, `Authorization: Bearer <token>`; amounts in responses are integer paise, amounts in requests are rupee strings like `"48000.50"`; lists are paginated with `data`, `links`, `meta`; validation errors are 422 with `errors`):
+
+| Area          | Endpoints                                                                                                                                                                                                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth          | `POST auth/token` {email, password, device_name} → token, or {two_factor, challenge}; `POST auth/two-factor` {challenge, code \| recovery_code, device_name}; `DELETE auth/token`; `GET me`                                                                                       |
+| Today         | `GET dashboard`; `GET reports?year=2026-27`; `GET products`                                                                                                                                                                                                                       |
+| Clients       | `GET/POST clients` (search, status, type, sort=recent); `GET/PATCH/DELETE clients/{id}` (show includes subscriptions, activities, invoices, outstanding); `POST clients/{id}/contacts`, `PATCH/DELETE contacts/{id}`; `POST clients/{id}/activities`, `DELETE activities/{id}`    |
+| Subscriptions | `POST clients/{id}/subscriptions`; `PATCH/DELETE subscriptions/{id}`; `POST subscriptions/{id}/rate-changes`; `POST subscriptions/{id}/renewals` {reason, waive}; `DELETE renewals/{period}`                                                                                      |
+| Invoices      | `GET clients/{id}/invoice-suggestions`; `GET/POST invoices` (filter, search, client_id); `GET/PATCH/DELETE invoices/{id}`; `POST invoices/{id}/finalise`, `/cancel`, `/whatsapp` {contact_id} → wa.me url, `/email`, `/payments`; `GET invoices/{id}/pdf`; `DELETE payments/{id}` |
+| Reminders     | `GET reminders?view=due\|upcoming\|done`; `POST reminders`; `PATCH reminders/{id}` {done} or {snooze_days}; `DELETE reminders/{id}`                                                                                                                                               |
+| Expenses      | `GET expenses?month=2026-10`; `POST expenses` (multipart for a receipt); `PATCH/DELETE expenses/{id}`; `GET expenses/{id}/receipt`                                                                                                                                                |
+| Devices       | `POST devices` {token, platform: android\|ios}; `DELETE devices` {token}                                                                                                                                                                                                          |
 
 **Later ideas:** Quotations or proposals (same item structure as invoices, then "convert to invoice"). Razorpay payment links on invoices (auto-marks paid, which then auto-renews). Credit notes. Auto-generate recurring invoices. A simple client portal.
 
@@ -388,7 +417,7 @@ Each phase ships with Pest feature tests and passes `composer test` (Pint, Laras
 1. **GST:** registered, so always a Tax Invoice with CGST+SGST or IGST. Also **Udyam** registered, so the Udyam number and MSME 45-day clause appear on invoices.
 2. **Pricing:** flat promotional rates now; the per-student (`per_unit`) model is built in for later. The student count is recorded now anyway.
 3. **Renewal:** advances only on **full payment**, with a manual override (reason required, revertible).
-4. **Messaging:** WhatsApp is primary (click-to-chat first, then Cloud API through your **existing Tech Provider app**, no new app); email goes through SendGrid.
+4. **Messaging:** WhatsApp is primary (click-to-chat first, then Cloud API through a **separate Direct Developer app**, see §4a, revised 2026-10-21); email goes through SendGrid.
 5. **Dependencies approved:** `barryvdh/laravel-dompdf`, `spatie/laravel-backup`, `laravel/sanctum`.
 6. **GST, Udyam and all company details** are editable in the CRM (Business Profile page + dashboard card), with an audit log and snapshots on each invoice.
 

@@ -45,6 +45,7 @@ export function ClientForm({ client, options, onDone }: Props) {
         source: client?.source ?? '',
         website: client?.website ?? '',
         notes: client?.notes ?? '',
+        whatsapp_automation: client?.whatsapp_automation ?? false,
         contact: {
             name: '',
             designation: '',
@@ -356,6 +357,26 @@ export function ClientForm({ client, options, onDone }: Props) {
                             placeholder="https://"
                         />
                     </Field>
+                    <div className="flex items-start gap-3 sm:col-span-2">
+                        <Checkbox
+                            id="whatsapp_automation"
+                            checked={data.whatsapp_automation}
+                            onCheckedChange={(checked) =>
+                                setData('whatsapp_automation', checked === true)
+                            }
+                            className="mt-0.5"
+                        />
+                        <div className="grid gap-0.5">
+                            <Label htmlFor="whatsapp_automation">
+                                Automatic WhatsApp messages
+                            </Label>
+                            <p className="text-xs text-muted-foreground">
+                                Renewal notices, overdue reminders and payment
+                                thank-yous go to the billing contact, if they
+                                agreed to WhatsApp messages.
+                            </p>
+                        </div>
+                    </div>
                     <Field
                         id="notes"
                         label="Notes"

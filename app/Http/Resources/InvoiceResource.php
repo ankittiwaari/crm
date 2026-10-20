@@ -83,8 +83,11 @@ class InvoiceResource extends JsonResource
                 'id' => $message->id,
                 'channel' => $message->channel->value,
                 'channel_label' => $message->channel->label(),
+                'direction' => $message->direction,
+                'status' => $message->status,
+                'error' => $message->error,
                 'recipient' => $message->recipient,
-                'sent_at' => $message->sent_at->toIso8601String(),
+                'sent_at' => ($message->sent_at ?? $message->created_at)?->toIso8601String(),
             ])->all()),
         ];
     }

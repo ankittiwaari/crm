@@ -3,6 +3,7 @@
 use App\Models\Client;
 use App\Models\CompanyProfile;
 use App\Models\Product;
+use App\Models\Reminder;
 use App\Models\Subscription;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -86,4 +87,18 @@ test('the dashboard totals recurring revenue and lists renewals and promos due s
             ->where('upcoming.0.kind', 'promo_ends')
             ->where('upcoming.1.kind', 'renewal')
             ->where('upcoming.1.client_name', 'Sunrise Public School'));
+});
+
+test('the dashboard shows reminders due today and clients in their grace period', function () {
+    $user = User::factory()->create();
+    Reminder::factory()->create(['title' => 'Call Sunrise']);
+    Reminder::factory()->create(['due_on' => today()->addDay()]);
+    Subscription::factory()->renewingIn(-5)->create(['grace_days' => 15]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('today', 1)
+            ->where('today.0.title', 'Call Sunrise')
+            ->where('upcoming.0.kind', 'in_grace'));
 });

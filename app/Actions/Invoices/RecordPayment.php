@@ -7,12 +7,16 @@ use App\Enums\InvoiceStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\WhatsApp\WhatsAppAutomations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class RecordPayment
 {
-    public function __construct(private RenewalLedger $ledger) {}
+    public function __construct(
+        private RenewalLedger $ledger,
+        private WhatsAppAutomations $whatsapp,
+    ) {}
 
     /**
      * Record money received (and any TDS the client deducted) against an issued invoice.
@@ -33,7 +37,7 @@ class RecordPayment
             ]);
         }
 
-        return DB::transaction(function () use ($invoice, $data, $user): Payment {
+        $payment = DB::transaction(function () use ($invoice, $data, $user): Payment {
             $payment = $invoice->payments()->create([
                 ...$data,
                 'tds_amount' => (int) ($data['tds_amount'] ?? 0),
@@ -44,6 +48,10 @@ class RecordPayment
 
             return $payment;
         });
+
+        $this->whatsapp->paymentRecorded($payment);
+
+        return $payment;
     }
 
     /**

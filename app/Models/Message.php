@@ -19,14 +19,23 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property string|null $messageable_type
  * @property int|null $messageable_id
  * @property MessageChannel $channel
+ * @property string $direction
+ * @property string|null $status
+ * @property string|null $provider_message_id
+ * @property array<string, mixed>|null $payload
+ * @property string|null $error
+ * @property CarbonImmutable|null $status_updated_at
  * @property string $template
  * @property string $recipient
  * @property string|null $body
- * @property CarbonImmutable $sent_at
+ * @property CarbonImmutable|null $sent_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['client_id', 'contact_id', 'user_id', 'channel', 'template', 'recipient', 'body', 'sent_at'])]
+#[Fillable([
+    'client_id', 'contact_id', 'user_id', 'channel', 'direction', 'status', 'provider_message_id', 'template',
+    'recipient', 'body', 'payload', 'error', 'sent_at', 'status_updated_at',
+])]
 class Message extends Model
 {
     /**
@@ -39,6 +48,8 @@ class Message extends Model
         return [
             'channel' => MessageChannel::class,
             'sent_at' => 'datetime',
+            'payload' => 'array',
+            'status_updated_at' => 'datetime',
         ];
     }
 

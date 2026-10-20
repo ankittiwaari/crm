@@ -19,8 +19,8 @@ use App\Http\Resources\SubscriptionResource;
 use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Product;
+use App\Queries\ClientList;
 use App\Support\Money;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -33,46 +33,12 @@ class ClientController extends Controller
      */
     public function index(Request $request): Response
     {
-        $search = $request->string('search')->trim()->value();
-        $status = ClientStatus::tryFrom($request->string('status')->value());
-        $type = ClientType::tryFrom($request->string('type')->value());
-        $sort = $request->string('sort')->value() === 'recent' ? 'recent' : 'name';
-
-        $filtered = fn (): Builder => Client::query()
-            ->search($search)
-            ->when($type, fn (Builder $query) => $query->where('type', $type));
-
-        $clients = $filtered()
-            ->with(['primaryContact', 'subscriptions' => fn ($query) => $query->live()])
-            ->when($status, fn (Builder $query) => $query->where('status', $status))
-            ->when(
-                $sort === 'recent',
-                fn (Builder $query) => $query->orderByRaw('last_activity_at is null')->latest('last_activity_at'),
-                fn (Builder $query) => $query->orderBy('name'),
-            )
-            ->paginate(25)
-            ->withQueryString();
-
-        $statusCounts = $filtered()
-            ->toBase()
-            ->selectRaw('status, count(*) as aggregate')
-            ->groupBy('status')
-            ->pluck('aggregate', 'status');
+        $list = new ClientList($request);
 
         return Inertia::render('clients/index', [
-            'clients' => ClientResource::collection($clients),
-            'filters' => [
-                'search' => $search,
-                'status' => $status?->value,
-                'type' => $type?->value,
-                'sort' => $sort,
-            ],
-            'statusCounts' => [
-                'all' => (int) $statusCounts->sum(),
-                ...collect(ClientStatus::cases())->mapWithKeys(fn (ClientStatus $case) => [
-                    $case->value => (int) ($statusCounts[$case->value] ?? 0),
-                ]),
-            ],
+            'clients' => ClientResource::collection($list->paginate()),
+            'filters' => $list->filters(),
+            'statusCounts' => $list->statusCounts(),
             'options' => $this->options(),
         ]);
     }
@@ -97,7 +63,11 @@ class ClientController extends Controller
         $client->load([
             'contacts' => fn ($query) => $query->orderByDesc('is_primary')->orderBy('name'),
             'subscriptions' => fn ($query) => $query
-                ->with(['product', 'rateRevisions' => fn ($revisions) => $revisions->latest('effective_from')->latest('id')])
+                ->with([
+                    'product',
+                    'rateRevisions' => fn ($revisions) => $revisions->latest('effective_from')->latest('id'),
+                    'periods' => fn ($periods) => $periods->latest('period_start')->limit(6),
+                ])
                 ->orderByRaw("case when status in ('active', 'trial') then 0 else 1 end")
                 ->orderBy('current_period_end'),
         ]);

@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'whatsapp' => [
+        // Meta Graph API version used for the WhatsApp Cloud API. Credentials live in the Business Profile.
+        'graph_version' => env('WHATSAPP_GRAPH_VERSION', 'v26.0'),
+        'graph_url' => env('WHATSAPP_GRAPH_URL', 'https://graph.facebook.com'),
+    ],
+
 ];

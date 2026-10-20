@@ -18,3 +18,18 @@ test('a financial year knows its first and last day', function () {
     expect($year->start()->toDateString())->toBe('2026-04-01')
         ->and($year->end()->toDateString())->toBe('2027-03-31');
 });
+
+test('a financial year can be read from its label', function () {
+    expect(FinancialYear::fromLabel('2026-27')?->startYear)->toBe(2026)
+        ->and(FinancialYear::fromLabel('2026-28'))->toBeNull()
+        ->and(FinancialYear::fromLabel('next year'))->toBeNull()
+        ->and(FinancialYear::fromLabel(null))->toBeNull();
+});
+
+test('the months of a financial year run from April to March', function () {
+    $months = FinancialYear::fromLabel('2026-27')->months();
+
+    expect($months)->toHaveCount(12)
+        ->and($months[0]->toDateString())->toBe('2026-04-01')
+        ->and($months[11]->toDateString())->toBe('2027-03-01');
+});

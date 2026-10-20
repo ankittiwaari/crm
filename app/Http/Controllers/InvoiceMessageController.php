@@ -7,6 +7,9 @@ use App\Mail\InvoiceMail;
 use App\Models\Contact;
 use App\Models\Invoice;
 use App\Services\Invoices\InvoiceMessages;
+use App\Services\WhatsApp\WhatsAppException;
+use App\Services\WhatsApp\WhatsAppMessenger;
+use App\Services\WhatsApp\WhatsAppTemplates;
 use App\Support\Money;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -79,6 +82,25 @@ class InvoiceMessageController extends Controller
             'email' => $email,
             'amount' => Money::format($invoice->balanceDue()),
         ])]);
+
+        return to_route('invoices.show', $invoice);
+    }
+
+    /**
+     * Send the invoice through the WhatsApp Cloud API (PDF attached), or a payment reminder when it is overdue.
+     */
+    public function whatsappApi(Request $request, Invoice $invoice, WhatsAppMessenger $messenger): RedirectResponse
+    {
+        $contact = Contact::query()->whereBelongsTo($invoice->client)->findOrFail($request->integer('contact'));
+        $type = $invoice->isOverdue() ? WhatsAppTemplates::PAYMENT_REMINDER : WhatsAppTemplates::INVOICE_ISSUED;
+
+        try {
+            $messenger->invoice($invoice, $contact, $type, $request->user());
+        } catch (WhatsAppException $exception) {
+            return back()->withErrors(['whatsapp' => $exception->getMessage()]);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Sending on WhatsApp to :name. Delivery updates appear below.', ['name' => $contact->name])]);
 
         return to_route('invoices.show', $invoice);
     }

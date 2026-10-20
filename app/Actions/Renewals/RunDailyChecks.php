@@ -11,6 +11,7 @@ use App\Models\InvoiceItem;
 use App\Models\Reminder;
 use App\Models\Subscription;
 use App\Services\Invoices\InvoiceSuggestions;
+use App\Services\WhatsApp\WhatsAppAutomations;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -30,6 +31,7 @@ class RunDailyChecks
     public function __construct(
         private InvoiceSuggestions $suggestions,
         private SaveDraftInvoice $saveDraft,
+        private WhatsAppAutomations $whatsapp,
     ) {}
 
     /**
@@ -66,12 +68,18 @@ class RunDailyChecks
         foreach ($subscriptions as $subscription) {
             $renewsOn = $subscription->current_period_end->addDay();
 
-            $reminders += $this->remind($subscription, "renewal:{$subscription->id}:{$renewsOn->toDateString()}", [
+            $created = $this->remind($subscription, "renewal:{$subscription->id}:{$renewsOn->toDateString()}", [
                 'client_id' => $subscription->client_id,
                 'type' => ReminderType::Renewal,
                 'title' => "{$subscription->client->name}: {$subscription->product->name} renews on {$renewsOn->format('d M Y')} (".
                     Money::format($subscription->amountPerCycle()).' + GST)',
             ]);
+
+            if ($created) {
+                $this->whatsapp->renewalDue($subscription);
+            }
+
+            $reminders += $created;
 
             if ($subscription->auto_renew && $this->draftRenewalInvoice($subscription)) {
                 $drafts++;
@@ -152,11 +160,17 @@ class RunDailyChecks
             $week = intdiv($invoice->daysOverdue(), 7);
             $name = $invoice->client_snapshot['name'] ?? $invoice->client->name;
 
-            $created += $this->remind($invoice, "overdue:{$invoice->id}:{$week}", [
+            $new = $this->remind($invoice, "overdue:{$invoice->id}:{$week}", [
                 'client_id' => $invoice->client_id,
                 'type' => ReminderType::PaymentFollowUp,
                 'title' => "{$name}: {$invoice->number} is {$invoice->daysOverdue()} days overdue (".Money::format($invoice->balanceDue()).')',
             ]);
+
+            if ($new) {
+                $this->whatsapp->invoiceOverdue($invoice);
+            }
+
+            $created += $new;
         }
 
         return $created;

@@ -47,6 +47,7 @@ class ClientRequest extends FormRequest
             'state_code' => ['nullable', Rule::enum(IndianState::class)],
             'pincode' => ['nullable', 'digits:6'],
             'gstin' => ['nullable', new ValidGstin],
+            'whatsapp_automation' => ['boolean'],
             'notes' => ['nullable', 'string', 'max:5000'],
         ];
     }
